@@ -347,7 +347,7 @@ def sample_memory_bytes(root_pid: int, jcmd_executable: Path) -> tuple[int | Non
     return None, "jcmd_gc.heap_info"
 
 
-def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: list[Path]) -> dict[str, object]:
+def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: list[Path], timeout_seconds: int) -> dict[str, object]:
     port_file = project_dir / ".internal" / "editor.port"
     start = time.monotonic()
     first_port_seen_ms: int | None = None
@@ -361,7 +361,7 @@ def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: 
             raise RuntimeError(f"editor exited before project opened (exit {process.returncode})")
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        if elapsed_ms > OPEN_TIMEOUT_SECONDS * 1000:
+        if elapsed_ms > timeout_seconds * 1000:
             raise RuntimeError(
                 "timed out waiting for project open"
                 f"; port_file={port_file.exists()}"
@@ -453,6 +453,7 @@ def main() -> int:
     parser.add_argument("--metadata-out", required=True)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--editor-sha")
+    parser.add_argument("--open-timeout-seconds", type=int, default=OPEN_TIMEOUT_SECONDS)
     args = parser.parse_args()
 
     work_dir = Path(args.work_dir)
@@ -468,7 +469,7 @@ def main() -> int:
         "platform": BENCHMARK_PLATFORM,
         "project": args.project,
         "requested_editor_sha": args.editor_sha,
-        "open_timeout_seconds": OPEN_TIMEOUT_SECONDS,
+        "open_timeout_seconds": args.open_timeout_seconds,
         "build_timeout_seconds": BUILD_TIMEOUT_SECONDS,
         "status": "failed",
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -538,7 +539,7 @@ def main() -> int:
             )
             log(f"started editor pid={editor_process.pid}")
 
-            open_result = wait_for_open(editor_process, project_dir, [editor_log, editor_err])
+            open_result = wait_for_open(editor_process, project_dir, [editor_log, editor_err], args.open_timeout_seconds)
             log(f"project open completed in {open_result['open_time_ms']} ms on port {open_result['editor_port']}")
             log("waiting 10 seconds before post-open heap measurement")
             time.sleep(10.0)

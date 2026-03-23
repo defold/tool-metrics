@@ -9,6 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
+DEFAULT_OPEN_TIMEOUT_SECONDS = 900
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 README_PATH = ROOT / "README.md"
@@ -96,6 +97,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--charts-dir", required=True)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--editor-sha")
+    parser.add_argument("--open-timeout-seconds", type=int, default=DEFAULT_OPEN_TIMEOUT_SECONDS)
     parser.add_argument("--commit", type=bool_arg, default=False)
     parser.add_argument("--target-branch")
     return parser.parse_args()
@@ -124,6 +126,8 @@ def main() -> int:
         str(artifacts_dir / "run-metadata.json"),
         "--project",
         args.project,
+        "--open-timeout-seconds",
+        str(args.open_timeout_seconds),
     ]
     if args.editor_sha:
         run_benchmark_command.extend(["--editor-sha", args.editor_sha])
