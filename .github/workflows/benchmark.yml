@@ -8,7 +8,7 @@ on:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -19,24 +19,36 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system packages
-        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libgtk-3-0 libnss3 libxss1 libasound2t64 libgbm1 libxshmfence1
+      - name: Show runner details
+        run: uname -a
 
       - name: Run benchmark bootstrap
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PYTHONUNBUFFERED: '1'
         run: |
-          mkdir -p artifacts work
+          mkdir -p artifacts work data charts
           python scripts/run_benchmark.py \
             --work-dir work \
             --artifacts-dir artifacts \
             --metadata-out artifacts/run-metadata.json \
             --project defold/sample-pixel-line-platformer
+          python scripts/persist_metrics.py \
+            --sample artifacts/sample.json \
+            --build-metadata artifacts/defold-build.json \
+            --csv data/metrics.csv
+          python scripts/generate_charts.py \
+            --metrics-csv data/metrics.csv \
+            --charts-dir charts
 
       - name: Upload benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-artifacts
-          path: artifacts
+          path: |
+            artifacts
+            data/metrics.csv
+            charts
+            README.md
           if-no-files-found: warn

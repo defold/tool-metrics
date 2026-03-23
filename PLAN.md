@@ -23,7 +23,6 @@ Track per Defold `dev` build:
 
 ## Measurement Strategy
 ### Open
-- launch editor under `xvfb`
 - inspect logs for project-open completion markers
 - also watch `.internal/editor.port` and the editor HTTP server as supporting signals
 
@@ -98,16 +97,16 @@ Use `commit_time` as the canonical X-axis value for charts.
 1. Phase 1: CI bootstrap ✅
    - add `scripts/ci.py` modeled after `shlice` so local validation always goes through GitHub Actions
    - add `.github/workflows/benchmark.yml` for Ubuntu, temp-branch pushes, and manual dispatch
-   - resolve and download the latest Linux Defold editor and launch it under `xvfb` with `sample-pixel-line-platformer`
+   - resolve and download the latest Linux Defold editor and launch `sample-pixel-line-platformer`
    - upload raw logs and minimal metadata artifacts even on failure
    - validation: run `python scripts/ci.py` and confirm the workflow succeeds, the run URL is surfaced, and artifacts download locally
-2. Phase 2: measurement stabilization
+2. Phase 2: measurement stabilization ✅
    - detect reliable project-open completion markers from logs and supporting readiness signals
    - trigger builds through the editor HTTP API and measure build completion
    - extract memory values from logs when possible, otherwise sample the process on Ubuntu
    - emit one structured sample artifact per run
    - validation: iterate with `python scripts/ci.py` until downloaded artifacts show stable, repeatable open/build/memory measurements
-3. Phase 3: persistence and charts
+3. Phase 3: persistence and charts ✅
    - append or dedupe samples in `data/metrics.csv` keyed by Defold commit metadata
    - generate SVG charts with `commit_time` on the X axis
    - update `README.md` to embed generated charts
