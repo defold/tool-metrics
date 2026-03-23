@@ -32,7 +32,7 @@ jobs:
             --work-dir work \
             --artifacts-dir artifacts \
             --metadata-out artifacts/run-metadata.json \
-            --project defold/sample-pixel-line-platformer
+            --project defold/big-synthetic-project
           python scripts/persist_metrics.py \
             --sample artifacts/sample.json \
             --build-metadata artifacts/defold-build.json \

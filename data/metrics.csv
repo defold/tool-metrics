@@ -1,2 +1,1 @@
 commit_sha,commit_time,release_tag,platform,project,install_size_bytes,open_time_ms,memory_after_open_bytes,build_time_ms,memory_after_build_bytes,memory_added_by_build_bytes
-ed867690202a7ec8449237a11ca7da21af9ac587,2026-03-23T12:28:14Z,1.12.4-alpha,macos-arm64,defold/sample-pixel-line-platformer,312555397,18652,161892352,1724,157626368,-4265984

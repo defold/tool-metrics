@@ -16,9 +16,9 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PROJECT = "defold/sample-pixel-line-platformer"
+DEFAULT_PROJECT = "defold/big-synthetic-project"
 BENCHMARK_PLATFORM = "macos-arm64"
-OPEN_TIMEOUT_SECONDS = 60
+OPEN_TIMEOUT_SECONDS = 300
 BUILD_TIMEOUT_SECONDS = 600
 POLL_INTERVAL_SECONDS = 1.0
 OPEN_LOG_MARKERS = {

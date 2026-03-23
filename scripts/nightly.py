@@ -8,7 +8,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PROJECT = "defold/sample-pixel-line-platformer"
+DEFAULT_PROJECT = "defold/big-synthetic-project"
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 

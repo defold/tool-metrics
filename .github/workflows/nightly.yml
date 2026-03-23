@@ -58,7 +58,7 @@ jobs:
             --artifacts-dir artifacts \
             --metrics-csv data/metrics.csv \
             --charts-dir charts \
-            --project defold/sample-pixel-line-platformer \
+            --project defold/big-synthetic-project \
             --commit "$COMMIT_ENABLED" \
             --target-branch "$TARGET_BRANCH" \
             ${EDITOR_SHA:+--editor-sha "$EDITOR_SHA"}
