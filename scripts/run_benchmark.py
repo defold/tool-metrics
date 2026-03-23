@@ -48,6 +48,13 @@ def log(message: str) -> None:
     print(f"[run_benchmark] {message}", flush=True)
 
 
+class BenchmarkTimeout(RuntimeError):
+    def __init__(self, stage: str, duration_ms: int, message: str):
+        super().__init__(message)
+        self.stage = stage
+        self.duration_ms = duration_ms
+
+
 def capture_debug_state(artifacts_dir: Path) -> dict[str, object]:
     screenshot_path = artifacts_dir / "debug-screenshot.png"
     screenshot_result = run_command(["screencapture", "-x", str(screenshot_path)])
@@ -354,6 +361,8 @@ def build_sample(
     *,
     open_result: dict[str, object] | None = None,
     build_result: dict[str, object] | None = None,
+    open_time_ms: int | None = None,
+    build_time_ms: int | None = None,
     memory_after_open_bytes: int | None = None,
     memory_after_build_bytes: int | None = None,
     status: str = "ok",
@@ -369,9 +378,9 @@ def build_sample(
         "status": status,
         "error": error,
         "install_size_bytes": install_size_bytes,
-        "open_time_ms": None if open_result is None else open_result.get("open_time_ms"),
+        "open_time_ms": open_time_ms if open_time_ms is not None else None if open_result is None else open_result.get("open_time_ms"),
         "memory_after_open_bytes": memory_after_open_bytes,
-        "build_time_ms": None if build_result is None else build_result.get("build_time_ms"),
+        "build_time_ms": build_time_ms if build_time_ms is not None else None if build_result is None else build_result.get("build_time_ms"),
         "memory_after_build_bytes": memory_after_build_bytes,
         "memory_added_by_build_bytes": None
         if memory_after_open_bytes is None or memory_after_build_bytes is None
@@ -395,7 +404,9 @@ def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: 
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
         if elapsed_ms > timeout_seconds * 1000:
-            raise RuntimeError(
+            raise BenchmarkTimeout(
+                "open",
+                timeout_seconds * 1000,
                 "timed out waiting for project open"
                 f"; port_file={port_file.exists()}"
                 f"; port={port}"
@@ -468,8 +479,7 @@ def trigger_build(port: int, timeout_seconds: int) -> dict[str, object]:
             timeout=timeout_seconds,
         )
     except TimeoutError as exc:
-        duration_ms = int((time.monotonic() - start) * 1000)
-        raise RuntimeError(f"timed out waiting for build after {duration_ms} ms") from exc
+        raise BenchmarkTimeout("build", timeout_seconds * 1000, f"timed out waiting for build after {timeout_seconds * 1000} ms") from exc
     duration_ms = int((time.monotonic() - start) * 1000)
     if status != 200:
         raise RuntimeError(f"build failed with HTTP {status}: {body.strip() or 'empty response'}")
@@ -626,6 +636,34 @@ def main() -> int:
                 "build_issue_count": issue_count,
             }
         )
+        write_json(metadata_out, metadata)
+        return 0
+    except BenchmarkTimeout as exc:
+        log(f"benchmark timed out during {exc.stage}: {exc}")
+        metadata["status"] = "failed"
+        metadata["error"] = str(exc)
+        metadata["sample_path"] = str(sample_path.resolve())
+        sample = build_sample(
+            args.project,
+            build_metadata,
+            metadata.get("install_size_bytes"),
+            open_result=open_result,
+            build_result=build_result,
+            open_time_ms=exc.duration_ms if exc.stage == "open" else None,
+            build_time_ms=exc.duration_ms if exc.stage == "build" else None,
+            memory_after_open_bytes=memory_after_open_bytes,
+            memory_after_build_bytes=memory_after_build_bytes,
+            status="failed",
+            error=str(exc),
+        )
+        write_json(sample_path, sample)
+        metadata["sample"] = sample
+        metadata["debug_tail"] = {
+            "editor_stdout": tail_lines(editor_log),
+            "editor_stderr": tail_lines(editor_err),
+            "launch": tail_lines(launch_log),
+        }
+        metadata["debug_state"] = capture_debug_state(artifacts_dir)
         write_json(metadata_out, metadata)
         return 0
     except Exception as exc:
