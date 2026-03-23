@@ -60,9 +60,15 @@ def format_metric(value: float, unit: str) -> str:
                 return f"{size:.1f} {suffix}" if suffix != "B" else f"{int(size)} B"
             size /= 1024
     if unit == "Milliseconds":
-        if value >= 1000:
-            return f"{value / 1000:.2f} s"
-        return f"{int(value)} ms"
+        sign = "-" if value < 0 else ""
+        duration_ms = abs(value)
+        if duration_ms >= 60000:
+            total_seconds = int(round(duration_ms / 1000))
+            minutes, seconds = divmod(total_seconds, 60)
+            return f"{sign}{minutes}m {seconds:02d}s"
+        if duration_ms >= 1000:
+            return f"{sign}{duration_ms / 1000:.2f} s"
+        return f"{sign}{int(duration_ms)} ms"
     return f"{value:.1f}"
 
 

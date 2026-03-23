@@ -4,6 +4,12 @@ from scripts import generate_charts
 
 
 class GenerateChartsTests(unittest.TestCase):
+    def test_format_metric_uses_minutes_and_seconds_for_long_durations(self) -> None:
+        self.assertEqual("10m 00s", generate_charts.format_metric(600000, "Milliseconds"))
+
+    def test_format_metric_keeps_seconds_for_short_durations(self) -> None:
+        self.assertEqual("12.35 s", generate_charts.format_metric(12345, "Milliseconds"))
+
     def test_render_chart_marks_failures_in_red(self) -> None:
         svg = generate_charts.render_chart(
             [
