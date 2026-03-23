@@ -2,6 +2,12 @@
 
 Nightly Defold editor benchmarks tracked by Defold commit metadata.
 
+## Run
+
+```shell
+python scripts/ci.py --workflow Nightly --event workflow_dispatch --input editor_sha=${SHA} --input commit_to_default_branch=true
+```
+
 ## Charts
 
 ### Install size
