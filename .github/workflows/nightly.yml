@@ -59,7 +59,8 @@ jobs:
             --metrics-csv data/metrics.csv \
             --charts-dir charts \
             --project defold/big-synthetic-project \
-            --open-timeout-seconds 900 \
+            --open-timeout-seconds 600 \
+            --build-timeout-seconds 600 \
             --commit "$COMMIT_ENABLED" \
             --target-branch "$TARGET_BRANCH" \
             ${EDITOR_SHA:+--editor-sha "$EDITOR_SHA"}

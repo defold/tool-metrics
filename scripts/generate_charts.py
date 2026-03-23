@@ -14,6 +14,7 @@ CHARTS = [
     ("memory_added_by_build_bytes", "memory-added-by-build.svg", "Memory Added By Build", "Bytes"),
 ]
 PALETTE = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#4d7c0f", "#6d28d9"]
+FAILURE_COLOR = "#dc2626"
 WIDTH = 960
 HEIGHT = 360
 PLOT_LEFT = 84
@@ -59,10 +60,15 @@ def series_key(row: dict[str, str]) -> str:
     return "series"
 
 
+def failure_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [row for row in rows if row.get("status", "ok") != "ok" and row.get("commit_time", "").strip()]
+
+
 def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) -> str:
     plot_width = WIDTH - PLOT_LEFT - PLOT_RIGHT
     plot_height = HEIGHT - PLOT_TOP - PLOT_BOTTOM
     points_by_series: dict[str, list[tuple[dt.datetime, float]]] = {}
+    failures = failure_rows(rows)
     for row in rows:
         value = metric_value(row, field)
         if value is None:
@@ -72,7 +78,9 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
         points.sort(key=lambda item: item[0])
 
     all_points = [point for points in points_by_series.values() for point in points]
-    if not all_points:
+    failure_times = [parse_time(row["commit_time"]) for row in failures]
+    all_times = [point[0] for point in all_points] + failure_times
+    if not all_times:
         return (
             f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {WIDTH} {HEIGHT}'>"
             f"<rect width='{WIDTH}' height='{HEIGHT}' fill='#fffdf7'/>"
@@ -80,11 +88,15 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
             "</svg>"
         )
 
-    min_time = min(point[0] for point in all_points)
-    max_time = max(point[0] for point in all_points)
-    min_value = min(point[1] for point in all_points)
-    max_value = max(point[1] for point in all_points)
-    min_value = min(0.0, min_value)
+    min_time = min(all_times)
+    max_time = max(all_times)
+    if all_points:
+        min_value = min(point[1] for point in all_points)
+        max_value = max(point[1] for point in all_points)
+        min_value = min(0.0, min_value)
+    else:
+        min_value = 0.0
+        max_value = 1.0
     if min_time == max_time:
         max_time = min_time + dt.timedelta(days=1)
     if min_value == max_value:
@@ -152,6 +164,14 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
             parts.append(
                 f"<text x='{legend_x + 22}' y='{legend_y + 2}' font-size='12' font-family='Helvetica, Arial, sans-serif' fill='#334155'>{html.escape(name)}</text>"
             )
+
+    failure_y = PLOT_TOP + 14
+    for row in failures:
+        timestamp = parse_time(row["commit_time"])
+        x = x_pos(timestamp)
+        label = html.escape(f"{timestamp.strftime('%Y-%m-%d')} failed: {row.get('error', 'benchmark failed')}")
+        parts.append(f"<line x1='{x:.2f}' y1='{PLOT_TOP}' x2='{x:.2f}' y2='{PLOT_TOP + plot_height}' stroke='{FAILURE_COLOR}' stroke-width='1' stroke-dasharray='4 4' opacity='0.6'/>")
+        parts.append(f"<circle cx='{x:.2f}' cy='{failure_y:.2f}' r='6' fill='{FAILURE_COLOR}'><title>{label}</title></circle>")
 
     parts.append("</svg>")
     return "".join(parts)

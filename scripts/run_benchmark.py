@@ -347,6 +347,39 @@ def sample_memory_bytes(root_pid: int, jcmd_executable: Path) -> tuple[int | Non
     return None, "jcmd_gc.heap_info"
 
 
+def build_sample(
+    project: str,
+    build_metadata: dict[str, object] | None,
+    install_size_bytes: object,
+    *,
+    open_result: dict[str, object] | None = None,
+    build_result: dict[str, object] | None = None,
+    memory_after_open_bytes: int | None = None,
+    memory_after_build_bytes: int | None = None,
+    status: str = "ok",
+    error: str | None = None,
+) -> dict[str, object]:
+    metadata = build_metadata or {}
+    sample = {
+        "commit_sha": metadata.get("editor_commit_sha"),
+        "commit_time": metadata.get("editor_commit_time"),
+        "release_tag": metadata.get("release_tag"),
+        "platform": metadata.get("platform", BENCHMARK_PLATFORM),
+        "project": project,
+        "status": status,
+        "error": error,
+        "install_size_bytes": install_size_bytes,
+        "open_time_ms": None if open_result is None else open_result.get("open_time_ms"),
+        "memory_after_open_bytes": memory_after_open_bytes,
+        "build_time_ms": None if build_result is None else build_result.get("build_time_ms"),
+        "memory_after_build_bytes": memory_after_build_bytes,
+        "memory_added_by_build_bytes": None
+        if memory_after_open_bytes is None or memory_after_build_bytes is None
+        else memory_after_build_bytes - memory_after_open_bytes,
+    }
+    return sample
+
+
 def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: list[Path], timeout_seconds: int) -> dict[str, object]:
     port_file = project_dir / ".internal" / "editor.port"
     start = time.monotonic()
@@ -426,13 +459,17 @@ def wait_for_open(process: subprocess.Popen[str], project_dir: Path, log_paths: 
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def trigger_build(port: int) -> dict[str, object]:
+def trigger_build(port: int, timeout_seconds: int) -> dict[str, object]:
     start = time.monotonic()
-    status, payload, body = http_json(
-        f"http://127.0.0.1:{port}/command/build",
-        method="POST",
-        timeout=BUILD_TIMEOUT_SECONDS,
-    )
+    try:
+        status, payload, body = http_json(
+            f"http://127.0.0.1:{port}/command/build",
+            method="POST",
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        duration_ms = int((time.monotonic() - start) * 1000)
+        raise RuntimeError(f"timed out waiting for build after {duration_ms} ms") from exc
     duration_ms = int((time.monotonic() - start) * 1000)
     if status != 200:
         raise RuntimeError(f"build failed with HTTP {status}: {body.strip() or 'empty response'}")
@@ -454,6 +491,7 @@ def main() -> int:
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--editor-sha")
     parser.add_argument("--open-timeout-seconds", type=int, default=OPEN_TIMEOUT_SECONDS)
+    parser.add_argument("--build-timeout-seconds", type=int, default=BUILD_TIMEOUT_SECONDS)
     args = parser.parse_args()
 
     work_dir = Path(args.work_dir)
@@ -470,7 +508,7 @@ def main() -> int:
         "project": args.project,
         "requested_editor_sha": args.editor_sha,
         "open_timeout_seconds": args.open_timeout_seconds,
-        "build_timeout_seconds": BUILD_TIMEOUT_SECONDS,
+        "build_timeout_seconds": args.build_timeout_seconds,
         "status": "failed",
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -480,6 +518,13 @@ def main() -> int:
     editor_log = logs_dir / "editor.stdout.log"
     editor_err = logs_dir / "editor.stderr.log"
     launch_log = logs_dir / "launch.log"
+    build_metadata: dict[str, object] | None = None
+    open_result: dict[str, object] | None = None
+    build_result: dict[str, object] | None = None
+    memory_after_open_bytes: int | None = None
+    memory_after_build_bytes: int | None = None
+    open_memory_source = "jcmd_gc.heap_info"
+    build_memory_source = "jcmd_gc.heap_info"
 
     try:
         log(f"starting benchmark for project {args.project}")
@@ -545,7 +590,7 @@ def main() -> int:
             time.sleep(10.0)
             memory_after_open_bytes, open_memory_source = sample_memory_bytes(editor_process.pid, jcmd_executable)
             log(f"memory after open: {memory_after_open_bytes} via {open_memory_source}")
-            build_result = trigger_build(int(open_result["editor_port"]))
+            build_result = trigger_build(int(open_result["editor_port"]), args.build_timeout_seconds)
             log(f"build completed in {build_result['build_time_ms']} ms")
             memory_after_build_bytes, build_memory_source = sample_memory_bytes(editor_process.pid, jcmd_executable)
             log(f"memory after build: {memory_after_build_bytes} via {build_memory_source}")
@@ -555,21 +600,16 @@ def main() -> int:
         if isinstance(build_response, dict) and isinstance(build_response.get("issues"), list):
             issue_count = len(build_response["issues"])
 
-        sample = {
-            "commit_sha": build_metadata.get("editor_commit_sha"),
-            "commit_time": build_metadata.get("editor_commit_time"),
-            "release_tag": build_metadata.get("release_tag"),
-            "platform": build_metadata.get("platform", BENCHMARK_PLATFORM),
-            "project": args.project,
-            "install_size_bytes": metadata["install_size_bytes"],
-            "open_time_ms": open_result["open_time_ms"],
-            "memory_after_open_bytes": memory_after_open_bytes,
-            "build_time_ms": build_result["build_time_ms"],
-            "memory_after_build_bytes": memory_after_build_bytes,
-            "memory_added_by_build_bytes": None
-            if memory_after_open_bytes is None or memory_after_build_bytes is None
-            else memory_after_build_bytes - memory_after_open_bytes,
-        }
+        sample = build_sample(
+            args.project,
+            build_metadata,
+            metadata["install_size_bytes"],
+            open_result=open_result,
+            build_result=build_result,
+            memory_after_open_bytes=memory_after_open_bytes,
+            memory_after_build_bytes=memory_after_build_bytes,
+            status="ok",
+        )
         write_json(sample_path, sample)
 
         metadata.update(
@@ -592,6 +632,19 @@ def main() -> int:
         log(f"benchmark failed: {exc}")
         metadata["error"] = str(exc)
         metadata["sample_path"] = str(sample_path.resolve())
+        if build_metadata is not None:
+            sample = build_sample(
+                args.project,
+                build_metadata,
+                metadata.get("install_size_bytes"),
+                open_result=open_result,
+                build_result=build_result,
+                memory_after_open_bytes=memory_after_open_bytes,
+                memory_after_build_bytes=memory_after_build_bytes,
+                status="failed",
+                error=str(exc),
+            )
+            write_json(sample_path, sample)
         metadata["debug_tail"] = {
             "editor_stdout": tail_lines(editor_log),
             "editor_stderr": tail_lines(editor_err),

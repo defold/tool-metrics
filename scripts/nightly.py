@@ -9,7 +9,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
-DEFAULT_OPEN_TIMEOUT_SECONDS = 900
+DEFAULT_OPEN_TIMEOUT_SECONDS = 600
+DEFAULT_BUILD_TIMEOUT_SECONDS = 600
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 README_PATH = ROOT / "README.md"
@@ -98,6 +99,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--editor-sha")
     parser.add_argument("--open-timeout-seconds", type=int, default=DEFAULT_OPEN_TIMEOUT_SECONDS)
+    parser.add_argument("--build-timeout-seconds", type=int, default=DEFAULT_BUILD_TIMEOUT_SECONDS)
     parser.add_argument("--commit", type=bool_arg, default=False)
     parser.add_argument("--target-branch")
     return parser.parse_args()
@@ -128,18 +130,26 @@ def main() -> int:
         args.project,
         "--open-timeout-seconds",
         str(args.open_timeout_seconds),
+        "--build-timeout-seconds",
+        str(args.build_timeout_seconds),
     ]
     if args.editor_sha:
         run_benchmark_command.extend(["--editor-sha", args.editor_sha])
-    run(*run_benchmark_command)
+    benchmark_result = run(*run_benchmark_command, check=False)
+
+    sample_path = artifacts_dir / "sample.json"
+    build_metadata_path = artifacts_dir / "defold-build.json"
+    if benchmark_result.returncode != 0 and (not sample_path.exists() or not build_metadata_path.exists()):
+        command = " ".join(run_benchmark_command)
+        raise RuntimeError(f"{command}: benchmark failed before producing sample artifacts")
 
     run(
         sys.executable,
         str(ROOT / "scripts" / "persist_metrics.py"),
         "--sample",
-        str(artifacts_dir / "sample.json"),
+        str(sample_path),
         "--build-metadata",
-        str(artifacts_dir / "defold-build.json"),
+        str(build_metadata_path),
         "--csv",
         str(metrics_csv),
     )
@@ -156,11 +166,11 @@ def main() -> int:
     if benchmark_outputs_changed():
         update_readme_last_updated(str(run_metadata["timestamp_utc"]))
 
-    sample = load_json(artifacts_dir / "sample.json")
+    sample = load_json(sample_path)
     if args.commit:
         target_branch = args.target_branch or os.environ.get("GITHUB_EVENT_REPOSITORY_DEFAULT_BRANCH") or "master"
         commit_results(target_branch, sample)
-    return 0
+    return benchmark_result.returncode
 
 
 if __name__ == "__main__":
