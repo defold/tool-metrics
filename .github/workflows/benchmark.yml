@@ -9,7 +9,7 @@ on:
 jobs:
   benchmark:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,8 +32,6 @@ jobs:
             --work-dir work \
             --artifacts-dir artifacts \
             --metadata-out artifacts/run-metadata.json \
-            --open-timeout-seconds 600 \
-            --build-timeout-seconds 600 \
             --project defold/big-synthetic-project
           python scripts/persist_metrics.py \
             --sample artifacts/sample.json \

@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
 DEFAULT_OPEN_TIMEOUT_SECONDS = 600
-DEFAULT_BUILD_TIMEOUT_SECONDS = 600
+DEFAULT_BUILD_TIMEOUT_SECONDS = 1800
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 README_PATH = ROOT / "README.md"
