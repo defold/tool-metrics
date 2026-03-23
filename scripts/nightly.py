@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
 BOT_NAME = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
+README_PATH = ROOT / "README.md"
+LAST_UPDATED_PREFIX = "Last updated: "
 
 
 def run(*args: str, env: dict[str, str] | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -49,6 +51,24 @@ def build_commit_message(sample: dict[str, object]) -> str:
     commit_sha = str(sample.get("commit_sha") or "").strip()
     short_sha = commit_sha[:12] if commit_sha else "latest-dev"
     return f"Update metrics for {short_sha}"
+
+
+def update_readme_last_updated(timestamp_utc: str, path: Path = README_PATH) -> None:
+    marker = f"{LAST_UPDATED_PREFIX}`{timestamp_utc}`"
+    lines = path.read_text().splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(LAST_UPDATED_PREFIX):
+            lines[index] = marker
+            path.write_text("\n".join(lines) + "\n")
+            return
+
+    insert_at = 3 if len(lines) >= 3 else len(lines)
+    lines[insert_at:insert_at] = [marker, ""]
+    path.write_text("\n".join(lines) + "\n")
+
+
+def benchmark_outputs_changed() -> bool:
+    return run("git", "diff", "--quiet", "--", "data/metrics.csv", "charts", check=False).returncode != 0
 
 
 def commit_results(target_branch: str, sample: dict[str, object]) -> bool:
@@ -127,6 +147,10 @@ def main() -> int:
         "--charts-dir",
         str(charts_dir),
     )
+
+    run_metadata = load_json(artifacts_dir / "run-metadata.json")
+    if benchmark_outputs_changed():
+        update_readme_last_updated(str(run_metadata["timestamp_utc"]))
 
     sample = load_json(artifacts_dir / "sample.json")
     if args.commit:

@@ -1,6 +1,7 @@
 # Editor Metrics
 
 Nightly Defold editor benchmarks tracked by Defold commit metadata.
+Last updated: `pending next nightly run`
 
 ## Run
 
