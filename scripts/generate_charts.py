@@ -8,6 +8,7 @@ from pathlib import Path
 
 CHARTS = [
     ("install_size_bytes", "install-size.svg", "Install Size", "Bytes"),
+    ("bob_build_time_ms", "bob-build-time.svg", "Bob Build Time", "Milliseconds"),
     ("open_time_ms", "open-time.svg", "Open Time", "Milliseconds"),
     ("memory_after_open_bytes", "memory-after-open.svg", "Memory After Open", "Bytes"),
     ("build_time_ms", "build-time.svg", "Build Time", "Milliseconds"),

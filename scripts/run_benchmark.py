@@ -19,6 +19,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
 BENCHMARK_PLATFORM = "macos-arm64"
+BOB_PLATFORMS = {
+    "macos-arm64": "arm64-macos",
+}
 OPEN_TIMEOUT_SECONDS = 1800
 BUILD_TIMEOUT_SECONDS = 1800
 POLL_INTERVAL_SECONDS = 1.0
@@ -27,8 +30,14 @@ OPEN_LOG_MARKERS = {
     "project_loaded": "project loaded",
     "stage_loaded": "stage-loaded",
 }
-def run_command(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True, check=False)
+def run_command(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True, check=False, timeout=timeout_seconds)
 
 
 def read_text(path: Path) -> str:
@@ -93,6 +102,23 @@ def find_jcmd_executable(unpack_dir: Path) -> Path:
     if jcmd_from_path:
         return Path(jcmd_from_path)
     raise RuntimeError("could not find jcmd executable")
+
+
+def find_java_executable(unpack_dir: Path) -> Path:
+    candidates = sorted(path for path in unpack_dir.rglob("java") if path.is_file() and os.access(path, os.X_OK))
+    if candidates:
+        return candidates[0]
+    java_from_path = shutil.which("java")
+    if java_from_path:
+        return Path(java_from_path)
+    raise RuntimeError("could not find java executable")
+
+
+def find_defold_jar(unpack_dir: Path) -> Path:
+    candidates = sorted(path for path in unpack_dir.rglob("defold-*.jar") if path.is_file())
+    if candidates:
+        return candidates[0]
+    raise RuntimeError("could not find Defold jar")
 
 
 def editor_command(editor_executable: Path, project_dir: Path) -> list[str]:
@@ -356,11 +382,129 @@ def sample_memory_bytes(root_pid: int, jcmd_executable: Path) -> tuple[int | Non
     return None, "jcmd_gc.heap_info"
 
 
+def bob_platform(platform_name: str) -> str:
+    try:
+        return BOB_PLATFORMS[platform_name]
+    except KeyError as exc:
+        raise RuntimeError(f"unsupported bob platform for {platform_name}") from exc
+
+
+def bob_command(
+    java_executable: Path,
+    defold_jar: Path,
+    output_dir: Path,
+    platform_name: str,
+    *commands: str,
+) -> list[str]:
+    return [
+        str(java_executable),
+        "-Djava.awt.headless=true",
+        "-cp",
+        str(defold_jar),
+        "com.dynamo.bob.Bob",
+        "--root",
+        ".",
+        "--output",
+        str(output_dir),
+        "--platform",
+        bob_platform(platform_name),
+        *commands,
+    ]
+
+
+def command_error_message(result: subprocess.CompletedProcess[str]) -> str:
+    for output in (result.stderr, result.stdout):
+        text = output.strip()
+        if text:
+            return text.splitlines()[-1]
+    return f"exit {result.returncode}"
+
+
+def run_bob_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    stdout_path: Path,
+    stderr_path: Path,
+    timeout_seconds: int,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        result = run_command(command, cwd=cwd, env=env, timeout_seconds=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        write_text(stdout_path, exc.stdout or "")
+        write_text(stderr_path, exc.stderr or "")
+        raise
+    write_text(stdout_path, result.stdout)
+    write_text(stderr_path, result.stderr)
+    return result
+
+
+def run_bob_build(
+    java_executable: Path,
+    defold_jar: Path,
+    project_dir: Path,
+    output_dir: Path,
+    logs_dir: Path,
+    *,
+    platform_name: str,
+    timeout_seconds: int,
+) -> dict[str, object]:
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir_relative = output_dir.relative_to(project_dir)
+
+    env = os.environ.copy()
+    env["JAVA_HOME"] = str(java_executable.parent.parent.resolve())
+
+    resolve_command = bob_command(java_executable, defold_jar, output_dir_relative, platform_name, "resolve")
+    try:
+        resolve_result = run_bob_command(
+            resolve_command,
+            cwd=project_dir,
+            env=env,
+            stdout_path=logs_dir / "bob.resolve.stdout.log",
+            stderr_path=logs_dir / "bob.resolve.stderr.log",
+            timeout_seconds=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BenchmarkTimeout("bob_build", timeout_seconds * 1000, f"timed out waiting for Bob resolve after {timeout_seconds * 1000} ms") from exc
+    if resolve_result.returncode != 0:
+        raise RuntimeError(f"bob resolve failed: {command_error_message(resolve_result)}")
+
+    build_command = bob_command(java_executable, defold_jar, output_dir_relative, platform_name, "build")
+    start = time.monotonic()
+    try:
+        build_result = run_bob_command(
+            build_command,
+            cwd=project_dir,
+            env=env,
+            stdout_path=logs_dir / "bob.build.stdout.log",
+            stderr_path=logs_dir / "bob.build.stderr.log",
+            timeout_seconds=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BenchmarkTimeout("bob_build", timeout_seconds * 1000, f"timed out waiting for Bob build after {timeout_seconds * 1000} ms") from exc
+    duration_ms = int((time.monotonic() - start) * 1000)
+    if build_result.returncode != 0:
+        raise RuntimeError(f"bob build failed: {command_error_message(build_result)}")
+
+    return {
+        "bob_build_time_ms": duration_ms,
+        "project_dir": str(project_dir.resolve()),
+        "output_dir": str(output_dir.resolve()),
+        "platform": bob_platform(platform_name),
+    }
+
+
 def build_sample(
     project: str,
     build_metadata: dict[str, object] | None,
     install_size_bytes: object,
     *,
+    bob_build_time_ms: int | None = None,
     open_result: dict[str, object] | None = None,
     build_result: dict[str, object] | None = None,
     open_time_ms: int | None = None,
@@ -380,6 +524,7 @@ def build_sample(
         "status": status,
         "error": error,
         "install_size_bytes": install_size_bytes,
+        "bob_build_time_ms": bob_build_time_ms,
         "open_time_ms": open_time_ms if open_time_ms is not None else None if open_result is None else open_result.get("open_time_ms"),
         "memory_after_open_bytes": memory_after_open_bytes,
         "build_time_ms": build_time_ms if build_time_ms is not None else None if build_result is None else build_result.get("build_time_ms"),
@@ -564,6 +709,7 @@ def main() -> int:
     editor_err = logs_dir / "editor.stderr.log"
     launch_log = logs_dir / "launch.log"
     build_metadata: dict[str, object] | None = None
+    bob_build_result: dict[str, object] | None = None
     open_result: dict[str, object] | None = None
     build_result: dict[str, object] | None = None
     memory_after_open_bytes: int | None = None
@@ -597,12 +743,18 @@ def main() -> int:
         unpack_dir = Path(build_metadata["unpack_dir"])
         editor_executable = find_editor_executable(unpack_dir)
         jcmd_executable = find_jcmd_executable(unpack_dir)
+        java_executable = find_java_executable(unpack_dir)
+        defold_jar = find_defold_jar(unpack_dir)
         make_executable(editor_executable)
         if unpack_dir in jcmd_executable.parents:
             make_executable(jcmd_executable)
+        if unpack_dir in java_executable.parents:
+            make_executable(java_executable)
         log(f"using editor executable {editor_executable}")
         metadata["editor_executable"] = str(editor_executable.resolve())
         metadata["jcmd_executable"] = str(jcmd_executable.resolve())
+        metadata["java_executable"] = str(java_executable.resolve())
+        metadata["defold_jar"] = str(defold_jar.resolve())
         metadata["install_size_bytes"] = directory_size_bytes(unpack_dir)
 
         projects_dir = work_dir / "projects"
@@ -611,6 +763,40 @@ def main() -> int:
         log(f"downloaded project branch {project_branch} to {project_dir}")
         metadata["project_dir"] = str(project_dir.resolve())
         metadata["project_branch"] = project_branch
+
+        bob_project_dir = work_dir / "bob-project"
+        if bob_project_dir.exists():
+            shutil.rmtree(bob_project_dir)
+        shutil.copytree(project_dir, bob_project_dir)
+        bob_output_dir = bob_project_dir / ".bob-output"
+        metadata["bob_build"] = {
+            "status": "not_run",
+            "project_dir": str(bob_project_dir.resolve()),
+            "output_dir": str(bob_output_dir.resolve()),
+        }
+        try:
+            log(f"running Bob build before launching the editor in {bob_project_dir}")
+            bob_build_result = run_bob_build(
+                java_executable,
+                defold_jar,
+                bob_project_dir,
+                bob_output_dir,
+                logs_dir / "bob",
+                platform_name=str(build_metadata.get("platform") or BENCHMARK_PLATFORM),
+                timeout_seconds=args.build_timeout_seconds,
+            )
+            log(f"Bob build completed in {bob_build_result['bob_build_time_ms']} ms")
+            metadata["bob_build"] = {
+                "status": "ok",
+                **bob_build_result,
+            }
+        except Exception as exc:
+            log(f"Bob build failed: {exc}")
+            metadata["bob_build"] = {
+                **metadata["bob_build"],
+                "status": "failed",
+                "error": str(exc),
+            }
 
         write_text(launch_log, "using direct macOS launch\n")
 
@@ -649,6 +835,7 @@ def main() -> int:
             args.project,
             build_metadata,
             metadata["install_size_bytes"],
+            bob_build_time_ms=None if bob_build_result is None else int(bob_build_result["bob_build_time_ms"]),
             open_result=open_result,
             build_result=build_result,
             memory_after_open_bytes=memory_after_open_bytes,
@@ -682,6 +869,7 @@ def main() -> int:
             args.project,
             build_metadata,
             metadata.get("install_size_bytes"),
+            bob_build_time_ms=None if bob_build_result is None else int(bob_build_result["bob_build_time_ms"]),
             open_result=open_result,
             build_result=build_result,
             open_time_ms=exc.duration_ms if exc.stage == "open" else None,
@@ -710,6 +898,7 @@ def main() -> int:
                 args.project,
                 build_metadata,
                 metadata.get("install_size_bytes"),
+                bob_build_time_ms=None if bob_build_result is None else int(bob_build_result["bob_build_time_ms"]),
                 open_result=open_result,
                 build_result=build_result,
                 memory_after_open_bytes=memory_after_open_bytes,

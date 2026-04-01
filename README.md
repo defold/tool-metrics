@@ -10,7 +10,13 @@ Last updated: `2026-04-01T14:00:49Z`
 python scripts/ci.py --workflow Nightly --event workflow_dispatch --input editor_sha=${SHA} --input commit_to_default_branch=true
 ```
 
-## Charts
+## Bob
+
+### Build time
+
+![Bob build time](charts/bob-build-time.svg)
+
+## Editor
 
 ### Install size
 
