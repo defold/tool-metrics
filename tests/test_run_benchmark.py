@@ -7,6 +7,14 @@ from scripts import run_benchmark
 
 
 class RunBenchmarkTests(unittest.TestCase):
+    @mock.patch.dict("os.environ", {"BENCHMARK_PREFER_PATH_JCMD": "1"}, clear=True)
+    @mock.patch("scripts.run_benchmark.shutil.which", return_value="/tmp/system-jcmd")
+    def test_find_jcmd_executable_prefers_path_when_enabled(self, which_mock: mock.Mock) -> None:
+        path = run_benchmark.find_jcmd_executable(Path("/tmp/defold"))
+
+        self.assertEqual(Path("/tmp/system-jcmd"), path)
+        which_mock.assert_called_once_with("jcmd")
+
     def test_parse_jcmd_heap_bytes_accepts_kibibytes(self) -> None:
         value = run_benchmark.parse_jcmd_heap_bytes("garbage-first heap total 2129920K, used 531072K")
 

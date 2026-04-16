@@ -24,11 +24,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'gradle'
+
       - name: Show runner details
         run: uname -a
 
       - name: Run benchmark bootstrap
         env:
+          BENCHMARK_PREFER_PATH_JCMD: '1'
           GITHUB_TOKEN: ${{ github.token }}
           PYTHONUNBUFFERED: '1'
           COMMENT: ${{ inputs.comment || '' }}

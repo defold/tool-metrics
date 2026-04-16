@@ -95,6 +95,10 @@ def find_editor_executable(unpack_dir: Path) -> Path:
 
 
 def find_jcmd_executable(unpack_dir: Path) -> Path:
+    if os.environ.get("BENCHMARK_PREFER_PATH_JCMD", "").strip().lower() in {"1", "true", "yes", "on"}:
+        jcmd_from_path = shutil.which("jcmd")
+        if jcmd_from_path:
+            return Path(jcmd_from_path)
     candidates = sorted(path for path in unpack_dir.rglob("jcmd") if path.is_file() and os.access(path, os.X_OK))
     if candidates:
         return candidates[0]
