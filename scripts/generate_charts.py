@@ -16,6 +16,7 @@ CHARTS = [
 ]
 PALETTE = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#4d7c0f", "#6d28d9"]
 FAILURE_COLOR = "#dc2626"
+ANNOTATION_COLOR = "#475569"
 WIDTH = 960
 HEIGHT = 360
 PLOT_LEFT = 84
@@ -36,7 +37,7 @@ def parse_time(value: str) -> dt.datetime:
 
 
 def metric_value(row: dict[str, str], field: str) -> float | None:
-    value = row.get(field, "").strip()
+    value = (row.get(field) or "").strip()
     if not value:
         return None
     return float(value)
@@ -77,9 +78,33 @@ def series_key(row: dict[str, str]) -> str:
     return "series"
 
 
+def annotation_rows(rows: list[dict[str, str]]) -> list[tuple[dt.datetime, str]]:
+    annotations: list[tuple[dt.datetime, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        comment = (row.get("comment") or "").strip()
+        commit_time = (row.get("commit_time") or "").strip()
+        if not comment or not commit_time:
+            continue
+        key = (commit_time, comment)
+        if key in seen:
+            continue
+        seen.add(key)
+        annotations.append((parse_time(commit_time), comment))
+    annotations.sort(key=lambda item: item[0])
+    return annotations
+
+
+def shorten_annotation(value: str, limit: int = 18) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit - 1]}…"
+
+
 def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) -> str:
     plot_width = WIDTH - PLOT_LEFT - PLOT_RIGHT
     plot_height = HEIGHT - PLOT_TOP - PLOT_BOTTOM
+    annotations = annotation_rows(rows)
     points_by_series: dict[str, list[tuple[dt.datetime, float, dict[str, str]]]] = {}
     for row in rows:
         value = metric_value(row, field)
@@ -90,7 +115,7 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
         points.sort(key=lambda item: item[0])
 
     all_points = [point for points in points_by_series.values() for point in points]
-    all_times = [point[0] for point in all_points]
+    all_times = [point[0] for point in all_points] + [timestamp for timestamp, _comment in annotations]
     if not all_times:
         return (
             f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {WIDTH} {HEIGHT}'>"
@@ -152,6 +177,20 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
         parts.append(f"<line x1='{x:.2f}' y1='{PLOT_TOP}' x2='{x:.2f}' y2='{PLOT_TOP + plot_height}' stroke='#f1f5f9' stroke-width='1'/>")
         parts.append(
             f"<text x='{x:.2f}' y='{PLOT_TOP + plot_height + 24}' text-anchor='middle' font-size='12' font-family='Helvetica, Arial, sans-serif' fill='#6b7280'>{label}</text>"
+        )
+
+    for timestamp, comment in annotations:
+        x = x_pos(timestamp)
+        label = html.escape(f"{timestamp.strftime('%Y-%m-%d')} {comment}")
+        visible = html.escape(shorten_annotation(comment))
+        parts.append(
+            f"<line x1='{x:.2f}' y1='{PLOT_TOP}' x2='{x:.2f}' y2='{PLOT_TOP + plot_height}' "
+            f"stroke='{ANNOTATION_COLOR}' stroke-width='2' stroke-dasharray='6 6' opacity='0.75'>"
+            f"<title>{label}</title></line>"
+        )
+        parts.append(
+            f"<text x='{x + 6:.2f}' y='{PLOT_TOP + 10}' transform='rotate(90 {x + 6:.2f} {PLOT_TOP + 10})' "
+            f"font-size='11' font-family='Helvetica, Arial, sans-serif' fill='{ANNOTATION_COLOR}'>{visible}</text>"
         )
 
     show_legend = len(points_by_series) > 1

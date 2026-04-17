@@ -48,6 +48,29 @@ class GenerateChartsTests(unittest.TestCase):
         self.assertNotIn(generate_charts.FAILURE_COLOR, svg)
         self.assertNotIn("failed:", svg)
 
+    def test_render_chart_draws_annotation_line_for_comment(self) -> None:
+        svg = generate_charts.render_chart(
+            [
+                {
+                    "commit_time": "2026-03-23T12:00:00Z",
+                    "status": "ok",
+                    "comment": "xcode-26.2",
+                    "open_time_ms": "1234",
+                },
+                {
+                    "commit_time": "2026-03-24T12:00:00Z",
+                    "status": "ok",
+                    "open_time_ms": "2345",
+                },
+            ],
+            "open_time_ms",
+            "Open Time",
+            "Milliseconds",
+        )
+
+        self.assertIn("stroke-dasharray='6 6'", svg)
+        self.assertIn("xcode-26.2", svg)
+
 
 if __name__ == "__main__":
     unittest.main()

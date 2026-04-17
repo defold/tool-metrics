@@ -5,10 +5,15 @@ on:
     branches:
       - ci/**
   workflow_dispatch:
+    inputs:
+      comment:
+        description: Optional note to store in metrics.csv and mark in charts
+        required: false
+        type: string
 
 jobs:
   benchmark:
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64, defold]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -19,13 +24,28 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Verify Java tools
+        run: |
+          java -version
+          which java
+          which jcmd
+          jcmd -l || true
+
       - name: Show runner details
         run: uname -a
 
       - name: Run benchmark bootstrap
         env:
+          BENCHMARK_PREFER_PATH_JCMD: '1'
           GITHUB_TOKEN: ${{ github.token }}
           PYTHONUNBUFFERED: '1'
+          COMMENT: ${{ inputs.comment || '' }}
         run: |
           mkdir -p artifacts work data charts
           python scripts/run_benchmark.py \
@@ -36,7 +56,8 @@ jobs:
           python scripts/persist_metrics.py \
             --sample artifacts/sample.json \
             --build-metadata artifacts/defold-build.json \
-            --csv data/metrics.csv
+            --csv data/metrics.csv \
+            ${COMMENT:+--comment "$COMMENT"}
           python scripts/generate_charts.py \
             --metrics-csv data/metrics.csv \
             --charts-dir charts

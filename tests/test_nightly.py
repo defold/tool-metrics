@@ -18,6 +18,17 @@ class NightlyTests(unittest.TestCase):
 
         self.assertEqual("Update metrics for 1234567890ab", message)
 
+    def test_build_persist_metrics_command_includes_comment(self) -> None:
+        command = nightly.build_persist_metrics_command(
+            Path("artifacts/sample.json"),
+            Path("artifacts/defold-build.json"),
+            Path("data/metrics.csv"),
+            "xcode-26.2",
+        )
+
+        self.assertIn("--comment", command)
+        self.assertEqual("xcode-26.2", command[-1])
+
     def test_update_readme_last_updated_inserts_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "README.md"

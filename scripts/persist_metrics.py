@@ -20,6 +20,7 @@ FIELDNAMES = [
     "build_time_ms",
     "memory_after_build_bytes",
     "memory_added_by_build_bytes",
+    "comment",
 ]
 KEY_FIELDS = ["commit_sha", "commit_time", "release_tag", "platform", "project"]
 
@@ -44,16 +45,18 @@ def load_rows(path: Path) -> list[dict[str, str]]:
         return []
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        return [{field: row.get(field, "") for field in FIELDNAMES} for row in reader]
+        return [{field: row.get(field, "") or "" for field in FIELDNAMES} for row in reader]
 
 
-def build_row(sample: dict[str, object], build_metadata: dict[str, object]) -> dict[str, str]:
+def build_row(sample: dict[str, object], build_metadata: dict[str, object], comment: str = "") -> dict[str, str]:
+    normalized_comment = str(sample.get("comment") or comment).strip()
     row = {
         "commit_sha": sample.get("commit_sha") or build_metadata.get("editor_commit_sha"),
         "commit_time": sample.get("commit_time") or sample.get("commit_date") or build_metadata.get("editor_commit_time"),
         "release_tag": sample.get("release_tag") or build_metadata.get("release_tag"),
         "platform": sample.get("platform") or build_metadata.get("platform"),
         "project": sample.get("project"),
+        "comment": normalized_comment,
         "status": sample.get("status") or "ok",
         "error": sample.get("error"),
         "install_size_bytes": sample.get("install_size_bytes"),
@@ -74,6 +77,14 @@ def row_key(row: dict[str, str]) -> tuple[str, ...]:
     return tuple(row[field] for field in KEY_FIELDS)
 
 
+def merge_row(existing_row: dict[str, str] | None, updated_row: dict[str, str]) -> dict[str, str]:
+    if existing_row and existing_row.get("comment", "").strip() and not updated_row.get("comment", "").strip():
+        merged = dict(updated_row)
+        merged["comment"] = existing_row["comment"]
+        return merged
+    return updated_row
+
+
 def write_rows(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as handle:
@@ -87,15 +98,17 @@ def main() -> int:
     parser.add_argument("--sample", required=True)
     parser.add_argument("--build-metadata", required=True)
     parser.add_argument("--csv", required=True)
+    parser.add_argument("--comment", default="")
     args = parser.parse_args()
 
     sample = load_json(Path(args.sample))
     build_metadata = load_json(Path(args.build_metadata))
     csv_path = Path(args.csv)
 
-    updated_row = build_row(sample, build_metadata)
+    updated_row = build_row(sample, build_metadata, args.comment)
     rows_by_key = {row_key(row): row for row in load_rows(csv_path)}
-    rows_by_key[row_key(updated_row)] = updated_row
+    key = row_key(updated_row)
+    rows_by_key[key] = merge_row(rows_by_key.get(key), updated_row)
     rows = sorted(rows_by_key.values(), key=lambda row: (row["commit_time"], row["project"], row["platform"]))
     write_rows(csv_path, rows)
     print(f"wrote {len(rows)} rows to {csv_path}")

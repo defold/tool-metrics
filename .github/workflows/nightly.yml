@@ -9,6 +9,10 @@ on:
         description: Optional Defold editor commit SHA or prefix
         required: false
         type: string
+      comment:
+        description: Optional note to store in metrics.csv and mark in charts
+        required: false
+        type: string
       commit_to_default_branch:
         description: Commit updated metrics back to the default branch
         required: false
@@ -28,7 +32,7 @@ concurrency:
 
 jobs:
   nightly:
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64, defold]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -41,16 +45,31 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Verify Java tools
+        run: |
+          java -version
+          which java
+          which jcmd
+          jcmd -l || true
+
       - name: Show runner details
         run: uname -a
 
       - name: Run nightly pipeline
         env:
+          BENCHMARK_PREFER_PATH_JCMD: '1'
           GITHUB_TOKEN: ${{ github.token }}
           PYTHONUNBUFFERED: '1'
           COMMIT_ENABLED: ${{ github.event_name == 'schedule' || inputs.commit_to_default_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch || github.event.repository.default_branch }}
           EDITOR_SHA: ${{ inputs.editor_sha }}
+          COMMENT: ${{ inputs.comment || '' }}
         run: |
           mkdir -p artifacts work data charts
           python scripts/nightly.py \
@@ -61,7 +80,8 @@ jobs:
             --project defold/big-synthetic-project \
             --commit "$COMMIT_ENABLED" \
             --target-branch "$TARGET_BRANCH" \
-            ${EDITOR_SHA:+--editor-sha "$EDITOR_SHA"}
+            ${EDITOR_SHA:+--editor-sha "$EDITOR_SHA"} \
+            ${COMMENT:+--comment "$COMMENT"}
 
       - name: Upload nightly artifacts
         if: always()

@@ -95,6 +95,10 @@ def find_editor_executable(unpack_dir: Path) -> Path:
 
 
 def find_jcmd_executable(unpack_dir: Path) -> Path:
+    if os.environ.get("BENCHMARK_PREFER_PATH_JCMD", "").strip().lower() in {"1", "true", "yes", "on"}:
+        jcmd_from_path = shutil.which("jcmd")
+        if jcmd_from_path:
+            return Path(jcmd_from_path)
     candidates = sorted(path for path in unpack_dir.rglob("jcmd") if path.is_file() and os.access(path, os.X_OK))
     if candidates:
         return candidates[0]
@@ -285,9 +289,34 @@ def java_process_pid(root_pid: int) -> int | None:
     return preferred[-1] if preferred else None
 
 
-def jcmd_heap_bytes(jcmd_executable: Path, root_pid: int) -> int | None:
+def parse_memory_size_bytes(value: str, unit: str) -> int:
+    multipliers = {
+        "": 1,
+        "B": 1,
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+    }
+    normalized_unit = unit.upper()
+    try:
+        multiplier = multipliers[normalized_unit]
+    except KeyError as exc:
+        raise RuntimeError(f"unsupported memory unit {unit!r}") from exc
+    return int(float(value) * multiplier)
+
+
+def parse_jcmd_heap_bytes(output: str) -> int | None:
     import re
 
+    for line in output.splitlines():
+        match = re.search(r"\bused(?:\s*=)?\s+([0-9]+(?:\.[0-9]+)?)\s*([BKMGT]?)\b", line, re.IGNORECASE)
+        if match:
+            return parse_memory_size_bytes(match.group(1), match.group(2))
+    return None
+
+
+def jcmd_heap_bytes(jcmd_executable: Path, root_pid: int) -> int | None:
     target_pid = java_process_pid(root_pid)
     if target_pid is None:
         return None
@@ -297,11 +326,7 @@ def jcmd_heap_bytes(jcmd_executable: Path, root_pid: int) -> int | None:
     result = run_command([str(jcmd_executable), str(target_pid), "GC.heap_info"])
     if result.returncode != 0:
         return None
-    for line in result.stdout.splitlines():
-        match = re.search(r"\bused\s+(\d+)K\b", line)
-        if match:
-            return int(match.group(1)) * 1024
-    return None
+    return parse_jcmd_heap_bytes(result.stdout)
 
 
 def directory_size_bytes(path: Path) -> int:
@@ -379,7 +404,10 @@ def sample_memory_bytes(root_pid: int, jcmd_executable: Path) -> tuple[int | Non
     from_jcmd = jcmd_heap_bytes(jcmd_executable, root_pid)
     if from_jcmd is not None:
         return from_jcmd, "jcmd_gc.heap_info"
-    return None, "jcmd_gc.heap_info"
+    from_rss = process_tree_rss_bytes(root_pid)
+    if from_rss is not None:
+        log(f"jcmd heap probe unavailable; process-tree rss={from_rss} bytes (debug only, not persisted)")
+    return None, "jcmd_gc.heap_info_unavailable"
 
 
 def bob_platform(platform_name: str) -> str:

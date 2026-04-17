@@ -7,6 +7,34 @@ from scripts import run_benchmark
 
 
 class RunBenchmarkTests(unittest.TestCase):
+    @mock.patch.dict("os.environ", {"BENCHMARK_PREFER_PATH_JCMD": "1"}, clear=True)
+    @mock.patch("scripts.run_benchmark.shutil.which", return_value="/tmp/system-jcmd")
+    def test_find_jcmd_executable_prefers_path_when_enabled(self, which_mock: mock.Mock) -> None:
+        path = run_benchmark.find_jcmd_executable(Path("/tmp/defold"))
+
+        self.assertEqual(Path("/tmp/system-jcmd"), path)
+        which_mock.assert_called_once_with("jcmd")
+
+    def test_parse_jcmd_heap_bytes_accepts_kibibytes(self) -> None:
+        value = run_benchmark.parse_jcmd_heap_bytes("garbage-first heap total 2129920K, used 531072K")
+
+        self.assertEqual(531072 * 1024, value)
+
+    def test_parse_jcmd_heap_bytes_accepts_mebibytes(self) -> None:
+        value = run_benchmark.parse_jcmd_heap_bytes("garbage-first heap total 2048M, used 122.5M")
+
+        self.assertEqual(int(122.5 * 1024**2), value)
+
+    def test_sample_memory_bytes_does_not_persist_ps_rss_fallback(self) -> None:
+        with mock.patch("scripts.run_benchmark.jcmd_heap_bytes", return_value=None), mock.patch(
+            "scripts.run_benchmark.process_tree_rss_bytes", return_value=987654321
+        ), mock.patch("scripts.run_benchmark.log") as log_mock:
+            value, source = run_benchmark.sample_memory_bytes(123, Path("/tmp/jcmd"))
+
+        self.assertIsNone(value)
+        self.assertEqual("jcmd_gc.heap_info_unavailable", source)
+        self.assertTrue(any("process-tree rss=987654321 bytes" in call.args[0] for call in log_mock.call_args_list))
+
     def test_build_sample_can_record_open_timeout(self) -> None:
         sample = run_benchmark.build_sample(
             "defold/big-synthetic-project",

@@ -85,6 +85,22 @@ def build_commit_message(sample: dict[str, object]) -> str:
     return f"Update metrics for {short_sha}"
 
 
+def build_persist_metrics_command(sample_path: Path, build_metadata_path: Path, metrics_csv: Path, comment: str) -> list[str]:
+    command = [
+        sys.executable,
+        str(ROOT / "scripts" / "persist_metrics.py"),
+        "--sample",
+        str(sample_path),
+        "--build-metadata",
+        str(build_metadata_path),
+        "--csv",
+        str(metrics_csv),
+    ]
+    if comment.strip():
+        command.extend(["--comment", comment.strip()])
+    return command
+
+
 def update_readme_last_updated(timestamp_utc: str, path: Path = README_PATH) -> None:
     marker = f"{LAST_UPDATED_PREFIX}`{timestamp_utc}`"
     lines = path.read_text().splitlines()
@@ -130,6 +146,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--editor-sha")
     parser.add_argument("--open-timeout-seconds", type=int, default=DEFAULT_OPEN_TIMEOUT_SECONDS)
     parser.add_argument("--build-timeout-seconds", type=int, default=DEFAULT_BUILD_TIMEOUT_SECONDS)
+    parser.add_argument("--comment", default="")
     parser.add_argument("--commit", type=bool_arg, default=False)
     parser.add_argument("--target-branch")
     return parser.parse_args()
@@ -175,16 +192,7 @@ def main() -> int:
         raise RuntimeError(f"{command}: benchmark failed before producing sample artifacts")
 
     log("persisting benchmark sample into metrics history")
-    run_logged(
-        sys.executable,
-        str(ROOT / "scripts" / "persist_metrics.py"),
-        "--sample",
-        str(sample_path),
-        "--build-metadata",
-        str(build_metadata_path),
-        "--csv",
-        str(metrics_csv),
-    )
+    run_logged(*build_persist_metrics_command(sample_path, build_metadata_path, metrics_csv, args.comment))
     log("regenerating charts from metrics history")
     run_logged(
         sys.executable,

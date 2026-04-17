@@ -2,12 +2,12 @@
 
 Nightly Defold editor benchmarks tracked by Defold commit metadata.
 
-Last updated: `2026-04-17T04:07:26Z`
+Last updated: `2026-04-17T06:10:08Z`
 
 ## Run
 
 ```shell
-python scripts/ci.py --workflow Nightly --event workflow_dispatch --input editor_sha=${SHA} --input commit_to_default_branch=true
+python scripts/ci.py --workflow Nightly --event workflow_dispatch --input editor_sha=${SHA} --input comment="xcode upgrade" --input commit_to_default_branch=true
 ```
 
 ## Bob
