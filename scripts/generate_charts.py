@@ -23,6 +23,8 @@ PLOT_LEFT = 84
 PLOT_RIGHT = 32
 PLOT_TOP = 20
 PLOT_BOTTOM = 64
+VALUE_TICK_INTERVALS = 4
+AXIS_HEADROOM = 1.05
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -72,6 +74,75 @@ def format_metric(value: float, unit: str) -> str:
             return f"{sign}{duration_ms / 1000:.2f} s"
         return f"{sign}{int(duration_ms)} ms"
     return f"{value:.1f}"
+
+
+def nice_steps(scale: float = 1.0):
+    magnitude = 1.0
+    while True:
+        yield from (
+            multiplier * magnitude * scale
+            for multiplier in (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 4.5, 5.0, 6.0, 7.5, 8.0, 10.0)
+        )
+        magnitude *= 10.0
+
+
+def nice_ceiling(value: float, scale: float = 1.0) -> float:
+    if value <= 0:
+        return scale
+    for step in nice_steps(scale):
+        if value <= step:
+            return step
+    raise RuntimeError("unreachable nice step generator exhausted")
+
+
+def byte_rounding_scale(value: float) -> float:
+    absolute = abs(value)
+    if absolute >= 1024**3:
+        return float(1024**3)
+    if absolute >= 1024**2:
+        return float(1024**2)
+    if absolute >= 1024:
+        return float(1024)
+    return 1.0
+
+
+def time_rounding_scale(value: float) -> float:
+    if value >= 60000:
+        return 60000.0
+    if value >= 1000:
+        return 1000.0
+    return 1.0
+
+
+def value_tick_step(max_value: float, unit: str) -> float:
+    target = max_value * AXIS_HEADROOM / VALUE_TICK_INTERVALS
+    if unit == "Milliseconds":
+        return nice_ceiling(target, time_rounding_scale(target))
+    if unit == "Bytes":
+        scale = byte_rounding_scale(target)
+        return nice_ceiling(target, scale)
+    return nice_ceiling(target)
+
+
+def value_axis_bounds(values: list[float], unit: str) -> tuple[float, float]:
+    if not values:
+        return 0.0, value_tick_step(1.0, unit) * VALUE_TICK_INTERVALS
+
+    min_observed = min(values)
+    max_observed = max(values)
+    min_value = (
+        -value_tick_step(abs(min_observed), unit) * VALUE_TICK_INTERVALS
+        if min_observed < 0.0
+        else 0.0
+    )
+    max_value = (
+        value_tick_step(max_observed, unit) * VALUE_TICK_INTERVALS
+        if max_observed > 0.0
+        else 0.0
+    )
+    if min_value == max_value:
+        max_value = value_tick_step(1.0, unit) * VALUE_TICK_INTERVALS
+    return min_value, max_value
 
 
 def series_key(row: dict[str, str]) -> str:
@@ -127,21 +198,11 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
     min_time = min(all_times)
     max_time = max(all_times)
     if all_points:
-        min_value = min(point[1] for point in all_points)
-        max_value = max(point[1] for point in all_points)
-        min_value = min(0.0, min_value)
+        min_value, max_value = value_axis_bounds([point[1] for point in all_points], unit)
     else:
-        min_value = 0.0
-        max_value = 1.0
+        min_value, max_value = value_axis_bounds([], unit)
     if min_time == max_time:
         max_time = min_time + dt.timedelta(days=1)
-    if min_value == max_value:
-        padding = max(1.0, abs(min_value) * 0.05)
-        min_value -= padding
-        max_value += padding
-    value_padding = (max_value - min_value) * 0.1
-    min_value -= value_padding
-    max_value += value_padding
 
     def x_pos(timestamp: dt.datetime) -> float:
         total = (max_time - min_time).total_seconds()
