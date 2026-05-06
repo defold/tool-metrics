@@ -2,17 +2,23 @@
 import argparse
 import csv
 import datetime as dt
+from enum import Enum
 import html
 from pathlib import Path
 
 
+class Unit(Enum):
+    BYTES = "Bytes"
+    MILLISECONDS = "Milliseconds"
+
+
 CHARTS = [
-    ("install_size_bytes", "install-size.svg", "Install Size", "Bytes"),
-    ("bob_build_time_ms", "bob-build-time.svg", "Bob Build Time", "Milliseconds"),
-    ("open_time_ms", "open-time.svg", "Open Time", "Milliseconds"),
-    ("memory_after_open_bytes", "memory-after-open.svg", "Memory After Open", "Bytes"),
-    ("build_time_ms", "build-time.svg", "Build Time", "Milliseconds"),
-    ("memory_added_by_build_bytes", "memory-added-by-build.svg", "Memory Added By Build", "Bytes"),
+    ("install_size_bytes", "install-size.svg", "Install Size", Unit.BYTES),
+    ("bob_build_time_ms", "bob-build-time.svg", "Bob Build Time", Unit.MILLISECONDS),
+    ("open_time_ms", "open-time.svg", "Open Time", Unit.MILLISECONDS),
+    ("memory_after_open_bytes", "memory-after-open.svg", "Memory After Open", Unit.BYTES),
+    ("build_time_ms", "build-time.svg", "Build Time", Unit.MILLISECONDS),
+    ("memory_added_by_build_bytes", "memory-added-by-build.svg", "Memory Added By Build", Unit.BYTES),
 ]
 PALETTE = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#4d7c0f", "#6d28d9"]
 FAILURE_COLOR = "#dc2626"
@@ -55,15 +61,15 @@ def point_is_failure(row: dict[str, str], field: str) -> bool:
     return False
 
 
-def format_metric(value: float, unit: str) -> str:
-    if unit == "Bytes":
+def format_metric(value: float, unit: Unit) -> str:
+    if unit == Unit.BYTES:
         suffixes = ["B", "KiB", "MiB", "GiB"]
         size = value
         for suffix in suffixes:
             if abs(size) < 1024 or suffix == suffixes[-1]:
                 return f"{size:.1f} {suffix}" if suffix != "B" else f"{int(size)} B"
             size /= 1024
-    if unit == "Milliseconds":
+    if unit == Unit.MILLISECONDS:
         sign = "-" if value < 0 else ""
         duration_ms = abs(value)
         if duration_ms >= 60000:
@@ -114,22 +120,45 @@ def time_rounding_scale(value: float) -> float:
     return 1.0
 
 
-def value_tick_step(max_value: float, unit: str) -> float:
-    target = max_value * AXIS_HEADROOM / VALUE_TICK_INTERVALS
-    if unit == "Milliseconds":
+def nice_tick_step(target: float, unit: Unit) -> float:
+    if unit == Unit.MILLISECONDS:
         return nice_ceiling(target, time_rounding_scale(target))
-    if unit == "Bytes":
+    if unit == Unit.BYTES:
         scale = byte_rounding_scale(target)
         return nice_ceiling(target, scale)
     return nice_ceiling(target)
 
 
-def value_axis_bounds(values: list[float], unit: str) -> tuple[float, float]:
+def value_tick_step(max_value: float, unit: Unit) -> float:
+    target = max_value * AXIS_HEADROOM / VALUE_TICK_INTERVALS
+    return nice_tick_step(target, unit)
+
+
+def value_axis_bounds(values: list[float], unit: Unit) -> tuple[float, float]:
     if not values:
         return 0.0, value_tick_step(1.0, unit) * VALUE_TICK_INTERVALS
 
     min_observed = min(values)
     max_observed = max(values)
+    if min_observed < 0.0 < max_observed:
+        candidates: list[tuple[float, float, float]] = []
+        for negative_tick_intervals in range(1, VALUE_TICK_INTERVALS):
+            positive_tick_intervals = VALUE_TICK_INTERVALS - negative_tick_intervals
+            target = max(
+                abs(min_observed) * AXIS_HEADROOM / negative_tick_intervals,
+                max_observed * AXIS_HEADROOM / positive_tick_intervals,
+            )
+            step = nice_tick_step(target, unit)
+            candidates.append(
+                (
+                    step * VALUE_TICK_INTERVALS,
+                    -step * negative_tick_intervals,
+                    step * positive_tick_intervals,
+                )
+            )
+        _range, min_value, max_value = min(candidates)
+        return min_value, max_value
+
     min_value = (
         -value_tick_step(abs(min_observed), unit) * VALUE_TICK_INTERVALS
         if min_observed < 0.0
@@ -172,7 +201,7 @@ def shorten_annotation(value: str, limit: int = 18) -> str:
     return f"{value[:limit - 1]}…"
 
 
-def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) -> str:
+def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit) -> str:
     plot_width = WIDTH - PLOT_LEFT - PLOT_RIGHT
     plot_height = HEIGHT - PLOT_TOP - PLOT_BOTTOM
     annotations = annotation_rows(rows)
