@@ -2,17 +2,23 @@
 import argparse
 import csv
 import datetime as dt
+from enum import Enum
 import html
 from pathlib import Path
 
 
+class Unit(Enum):
+    BYTES = "Bytes"
+    MILLISECONDS = "Milliseconds"
+
+
 CHARTS = [
-    ("install_size_bytes", "install-size.svg", "Install Size", "Bytes"),
-    ("bob_build_time_ms", "bob-build-time.svg", "Bob Build Time", "Milliseconds"),
-    ("open_time_ms", "open-time.svg", "Open Time", "Milliseconds"),
-    ("memory_after_open_bytes", "memory-after-open.svg", "Memory After Open", "Bytes"),
-    ("build_time_ms", "build-time.svg", "Build Time", "Milliseconds"),
-    ("memory_added_by_build_bytes", "memory-added-by-build.svg", "Memory Added By Build", "Bytes"),
+    ("install_size_bytes", "install-size.svg", "Install Size", Unit.BYTES),
+    ("bob_build_time_ms", "bob-build-time.svg", "Bob Build Time", Unit.MILLISECONDS),
+    ("open_time_ms", "open-time.svg", "Open Time", Unit.MILLISECONDS),
+    ("memory_after_open_bytes", "memory-after-open.svg", "Memory After Open", Unit.BYTES),
+    ("build_time_ms", "build-time.svg", "Build Time", Unit.MILLISECONDS),
+    ("memory_added_by_build_bytes", "memory-added-by-build.svg", "Memory Added By Build", Unit.BYTES),
 ]
 PALETTE = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#4d7c0f", "#6d28d9"]
 FAILURE_COLOR = "#dc2626"
@@ -23,6 +29,8 @@ PLOT_LEFT = 84
 PLOT_RIGHT = 32
 PLOT_TOP = 20
 PLOT_BOTTOM = 64
+VALUE_TICK_INTERVALS = 4
+AXIS_HEADROOM = 1.05
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -53,15 +61,15 @@ def point_is_failure(row: dict[str, str], field: str) -> bool:
     return False
 
 
-def format_metric(value: float, unit: str) -> str:
-    if unit == "Bytes":
+def format_metric(value: float, unit: Unit) -> str:
+    if unit == Unit.BYTES:
         suffixes = ["B", "KiB", "MiB", "GiB"]
         size = value
         for suffix in suffixes:
             if abs(size) < 1024 or suffix == suffixes[-1]:
                 return f"{size:.1f} {suffix}" if suffix != "B" else f"{int(size)} B"
             size /= 1024
-    if unit == "Milliseconds":
+    if unit == Unit.MILLISECONDS:
         sign = "-" if value < 0 else ""
         duration_ms = abs(value)
         if duration_ms >= 60000:
@@ -72,6 +80,98 @@ def format_metric(value: float, unit: str) -> str:
             return f"{sign}{duration_ms / 1000:.2f} s"
         return f"{sign}{int(duration_ms)} ms"
     return f"{value:.1f}"
+
+
+def nice_steps(scale: float = 1.0):
+    magnitude = 1.0
+    while True:
+        yield from (
+            multiplier * magnitude * scale
+            for multiplier in (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 4.5, 5.0, 6.0, 7.5, 8.0, 10.0)
+        )
+        magnitude *= 10.0
+
+
+def nice_ceiling(value: float, scale: float = 1.0) -> float:
+    if value <= 0:
+        return scale
+    for step in nice_steps(scale):
+        if value <= step:
+            return step
+    raise RuntimeError("unreachable nice step generator exhausted")
+
+
+def byte_rounding_scale(value: float) -> float:
+    absolute = abs(value)
+    if absolute >= 1024**3:
+        return float(1024**3)
+    if absolute >= 1024**2:
+        return float(1024**2)
+    if absolute >= 1024:
+        return float(1024)
+    return 1.0
+
+
+def time_rounding_scale(value: float) -> float:
+    if value >= 60000:
+        return 60000.0
+    if value >= 1000:
+        return 1000.0
+    return 1.0
+
+
+def nice_tick_step(target: float, unit: Unit) -> float:
+    if unit == Unit.MILLISECONDS:
+        return nice_ceiling(target, time_rounding_scale(target))
+    if unit == Unit.BYTES:
+        scale = byte_rounding_scale(target)
+        return nice_ceiling(target, scale)
+    return nice_ceiling(target)
+
+
+def value_tick_step(max_value: float, unit: Unit) -> float:
+    target = max_value * AXIS_HEADROOM / VALUE_TICK_INTERVALS
+    return nice_tick_step(target, unit)
+
+
+def value_axis_bounds(values: list[float], unit: Unit) -> tuple[float, float]:
+    if not values:
+        return 0.0, value_tick_step(1.0, unit) * VALUE_TICK_INTERVALS
+
+    min_observed = min(values)
+    max_observed = max(values)
+    if min_observed < 0.0 < max_observed:
+        candidates: list[tuple[float, float, float]] = []
+        for negative_tick_intervals in range(1, VALUE_TICK_INTERVALS):
+            positive_tick_intervals = VALUE_TICK_INTERVALS - negative_tick_intervals
+            target = max(
+                abs(min_observed) * AXIS_HEADROOM / negative_tick_intervals,
+                max_observed * AXIS_HEADROOM / positive_tick_intervals,
+            )
+            step = nice_tick_step(target, unit)
+            candidates.append(
+                (
+                    step * VALUE_TICK_INTERVALS,
+                    -step * negative_tick_intervals,
+                    step * positive_tick_intervals,
+                )
+            )
+        _range, min_value, max_value = min(candidates)
+        return min_value, max_value
+
+    min_value = (
+        -value_tick_step(abs(min_observed), unit) * VALUE_TICK_INTERVALS
+        if min_observed < 0.0
+        else 0.0
+    )
+    max_value = (
+        value_tick_step(max_observed, unit) * VALUE_TICK_INTERVALS
+        if max_observed > 0.0
+        else 0.0
+    )
+    if min_value == max_value:
+        max_value = value_tick_step(1.0, unit) * VALUE_TICK_INTERVALS
+    return min_value, max_value
 
 
 def series_key(row: dict[str, str]) -> str:
@@ -101,7 +201,7 @@ def shorten_annotation(value: str, limit: int = 18) -> str:
     return f"{value[:limit - 1]}…"
 
 
-def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) -> str:
+def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit) -> str:
     plot_width = WIDTH - PLOT_LEFT - PLOT_RIGHT
     plot_height = HEIGHT - PLOT_TOP - PLOT_BOTTOM
     annotations = annotation_rows(rows)
@@ -127,21 +227,11 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: str) 
     min_time = min(all_times)
     max_time = max(all_times)
     if all_points:
-        min_value = min(point[1] for point in all_points)
-        max_value = max(point[1] for point in all_points)
-        min_value = min(0.0, min_value)
+        min_value, max_value = value_axis_bounds([point[1] for point in all_points], unit)
     else:
-        min_value = 0.0
-        max_value = 1.0
+        min_value, max_value = value_axis_bounds([], unit)
     if min_time == max_time:
         max_time = min_time + dt.timedelta(days=1)
-    if min_value == max_value:
-        padding = max(1.0, abs(min_value) * 0.05)
-        min_value -= padding
-        max_value += padding
-    value_padding = (max_value - min_value) * 0.1
-    min_value -= value_padding
-    max_value += value_padding
 
     def x_pos(timestamp: dt.datetime) -> float:
         total = (max_time - min_time).total_seconds()

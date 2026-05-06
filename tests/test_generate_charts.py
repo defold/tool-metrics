@@ -3,12 +3,36 @@ import unittest
 from scripts import generate_charts
 
 
+Unit = generate_charts.Unit
+
+
 class GenerateChartsTests(unittest.TestCase):
     def test_format_metric_uses_minutes_and_seconds_for_long_durations(self) -> None:
-        self.assertEqual("10m 00s", generate_charts.format_metric(600000, "Milliseconds"))
+        self.assertEqual("10m 00s", generate_charts.format_metric(600000, Unit.MILLISECONDS))
 
     def test_format_metric_keeps_seconds_for_short_durations(self) -> None:
-        self.assertEqual("12.35 s", generate_charts.format_metric(12345, "Milliseconds"))
+        self.assertEqual("12.35 s", generate_charts.format_metric(12345, Unit.MILLISECONDS))
+
+    def test_value_axis_bounds_never_go_below_zero(self) -> None:
+        self.assertEqual(0.0, generate_charts.value_axis_bounds([1234, 5678], Unit.MILLISECONDS)[0])
+
+    def test_value_axis_bounds_round_milliseconds_to_time_steps(self) -> None:
+        self.assertEqual((0.0, 240000.0), generate_charts.value_axis_bounds([221665], Unit.MILLISECONDS))
+
+    def test_value_axis_bounds_rounds_long_milliseconds_by_minutes(self) -> None:
+        self.assertEqual((0.0, 1800000.0), generate_charts.value_axis_bounds([1457284], Unit.MILLISECONDS))
+
+    def test_value_axis_bounds_rounds_bytes(self) -> None:
+        self.assertEqual((0.0, 320.0), generate_charts.value_axis_bounds([300], Unit.BYTES))
+
+    def test_value_axis_bounds_include_negative_byte_deltas(self) -> None:
+        self.assertEqual((-320.0, 0.0), generate_charts.value_axis_bounds([-300], Unit.BYTES))
+
+    def test_value_axis_bounds_use_one_tick_step_for_mixed_signs(self) -> None:
+        self.assertEqual(
+            (-150.0, 450.0),
+            generate_charts.value_axis_bounds([-100, 300], Unit.BYTES),
+        )
 
     def test_render_chart_marks_failures_in_red(self) -> None:
         svg = generate_charts.render_chart(
@@ -22,7 +46,7 @@ class GenerateChartsTests(unittest.TestCase):
             ],
             "open_time_ms",
             "Open Time",
-            "Milliseconds",
+            Unit.MILLISECONDS,
         )
 
         self.assertIn(generate_charts.FAILURE_COLOR, svg)
@@ -42,7 +66,7 @@ class GenerateChartsTests(unittest.TestCase):
             ],
             "install_size_bytes",
             "Install Size",
-            "Bytes",
+            Unit.BYTES,
         )
 
         self.assertNotIn(generate_charts.FAILURE_COLOR, svg)
@@ -65,7 +89,7 @@ class GenerateChartsTests(unittest.TestCase):
             ],
             "open_time_ms",
             "Open Time",
-            "Milliseconds",
+            Unit.MILLISECONDS,
         )
 
         self.assertIn("stroke-dasharray='6 6'", svg)
