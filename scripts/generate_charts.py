@@ -5,6 +5,7 @@ import datetime as dt
 from enum import Enum
 import html
 from pathlib import Path
+import statistics
 
 
 class Unit(Enum):
@@ -31,6 +32,13 @@ PLOT_TOP = 20
 PLOT_BOTTOM = 64
 VALUE_TICK_INTERVALS = 4
 AXIS_HEADROOM = 1.05
+POINT_LABEL_FONT_SIZE = 10
+POINT_LABEL_DY = 8
+POINT_LABEL_WINDOW = dt.timedelta(days=7)
+POINT_LABEL_MIN_PREVIOUS = 3
+POINT_LABEL_VOLATILITY_MULTIPLIER = 1.75
+POINT_LABEL_MIN_RELATIVE_VOLATILITY = 0.01
+POINT_LABEL_MIN_SPACING = dt.timedelta(days=1)
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -201,6 +209,45 @@ def shorten_annotation(value: str, limit: int = 18) -> str:
     return f"{value[:limit - 1]}…"
 
 
+def rolling_label_indexes(points: list[tuple[dt.datetime, float, dict[str, str]]], field: str) -> set[int]:
+    if not points:
+        return set()
+
+    labels = {len(points) - 1}
+    candidates: list[tuple[float, int]] = []
+    for index, (timestamp, value, row) in enumerate(points):
+        if point_is_failure(row, field):
+            labels.add(index)
+            continue
+
+        previous_values = [
+            previous_value
+            for previous_timestamp, previous_value, _previous_row in points[:index]
+            if dt.timedelta(0) < timestamp - previous_timestamp <= POINT_LABEL_WINDOW
+        ]
+        if len(previous_values) < POINT_LABEL_MIN_PREVIOUS:
+            continue
+
+        median = statistics.median(previous_values)
+        median_absolute_deviation = statistics.median(abs(previous_value - median) for previous_value in previous_values)
+        previous_range = max(previous_values) - min(previous_values)
+        volatility = max(
+            median_absolute_deviation * 1.4826,
+            previous_range / 4,
+            abs(median) * POINT_LABEL_MIN_RELATIVE_VOLATILITY,
+            1.0,
+        )
+        score = abs(value - median) / volatility
+        if score >= POINT_LABEL_VOLATILITY_MULTIPLIER:
+            candidates.append((score, index))
+
+    for _score, index in sorted(candidates, reverse=True):
+        timestamp = points[index][0]
+        if all(abs(timestamp - points[label_index][0]) >= POINT_LABEL_MIN_SPACING for label_index in labels):
+            labels.add(index)
+    return labels
+
+
 def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit) -> str:
     plot_width = WIDTH - PLOT_LEFT - PLOT_RIGHT
     plot_height = HEIGHT - PLOT_TOP - PLOT_BOTTOM
@@ -240,6 +287,18 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit)
 
     def y_pos(value: float) -> float:
         return PLOT_TOP + plot_height - ((value - min_value) / (max_value - min_value)) * plot_height
+
+    def point_label_attrs(x: float, y: float) -> tuple[float, float, str]:
+        label_x = x
+        label_y = y - POINT_LABEL_DY
+        anchor = "middle"
+        if x < PLOT_LEFT + 36:
+            anchor = "start"
+        elif x > PLOT_LEFT + plot_width - 36:
+            anchor = "end"
+        if y < PLOT_TOP + POINT_LABEL_FONT_SIZE + POINT_LABEL_DY:
+            label_y = y + POINT_LABEL_FONT_SIZE + POINT_LABEL_DY
+        return label_x, label_y, anchor
 
     parts = [
         f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {WIDTH} {HEIGHT}'>",
@@ -290,7 +349,8 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit)
         coords = [f"{x_pos(timestamp):.2f},{y_pos(value):.2f}" for timestamp, value, _row in points]
         if len(coords) >= 2:
             parts.append(f"<polyline fill='none' stroke='{color}' stroke-width='3' points='{' '.join(coords)}'/>")
-        for timestamp, value, row in points:
+        label_indexes = rolling_label_indexes(points, field)
+        for point_index, (timestamp, value, row) in enumerate(points):
             x = x_pos(timestamp)
             y = y_pos(value)
             label_text = f"{timestamp.strftime('%Y-%m-%d')} {format_metric(value, unit)}"
@@ -302,6 +362,15 @@ def render_chart(rows: list[dict[str, str]], field: str, title: str, unit: Unit)
                 label_text = f"{label_text} failed: {row['error']}"
             label = html.escape(label_text)
             parts.append(f"<circle cx='{x:.2f}' cy='{y:.2f}' r='4' fill='{point_color}'><title>{label}</title></circle>")
+            if point_index not in label_indexes:
+                continue
+            label_x, label_y, label_anchor = point_label_attrs(x, y)
+            parts.append(
+                f"<text x='{label_x:.2f}' y='{label_y:.2f}' text-anchor='{label_anchor}' "
+                f"font-size='{POINT_LABEL_FONT_SIZE}' font-family='Helvetica, Arial, sans-serif' "
+                f"font-weight='600' paint-order='stroke' stroke='#fffdf7' stroke-width='3' "
+                f"stroke-linejoin='round' fill='#334155'>{html.escape(format_metric(value, unit))}</text>"
+            )
         if show_legend:
             legend_x = 32 + index * 220
             parts.append(f"<rect x='{legend_x}' y='{legend_y - 10}' width='14' height='14' rx='3' fill='{color}'/>")

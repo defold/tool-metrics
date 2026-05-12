@@ -95,6 +95,94 @@ class GenerateChartsTests(unittest.TestCase):
         self.assertIn("stroke-dasharray='6 6'", svg)
         self.assertIn("xcode-26.2", svg)
 
+    def test_render_chart_always_labels_latest_value(self) -> None:
+        svg = generate_charts.render_chart(
+            [
+                {
+                    "commit_time": "2026-03-23T12:00:00Z",
+                    "status": "ok",
+                    "open_time_ms": "1234",
+                },
+                {
+                    "commit_time": "2026-03-24T12:00:00Z",
+                    "status": "ok",
+                    "open_time_ms": "2345",
+                },
+            ],
+            "open_time_ms",
+            "Open Time",
+            Unit.MILLISECONDS,
+        )
+
+        self.assertEqual(1, svg.count("font-size='10'"))
+        self.assertIn(">2.35 s</text>", svg)
+
+    def test_render_chart_labels_rolling_outliers_and_latest(self) -> None:
+        rows = [
+            {
+                "commit_time": f"2026-03-{day:02d}T12:00:00Z",
+                "status": "ok",
+                "open_time_ms": str(value),
+            }
+            for day, value in [
+                (1, 100),
+                (2, 100),
+                (3, 100),
+                (4, 200),
+                (5, 100),
+                (8, 101),
+            ]
+        ]
+        svg = generate_charts.render_chart(rows, "open_time_ms", "Open Time", Unit.MILLISECONDS)
+
+        self.assertEqual(2, svg.count("font-size='10'"))
+        self.assertIn(">200 ms</text>", svg)
+        self.assertIn(">101 ms</text>", svg)
+        self.assertNotIn(">100 ms</text>", svg)
+
+    def test_render_chart_labels_dramatic_shift_from_previous_values(self) -> None:
+        rows = [
+            {
+                "commit_time": f"2026-03-{day:02d}T12:00:00Z",
+                "status": "ok",
+                "open_time_ms": str(value),
+            }
+            for day, value in [
+                (1, 180000),
+                (2, 190000),
+                (3, 175000),
+                (4, 185000),
+                (5, 41000),
+                (9, 42000),
+            ]
+        ]
+        svg = generate_charts.render_chart(rows, "open_time_ms", "Open Time", Unit.MILLISECONDS)
+
+        self.assertEqual(2, svg.count("font-size='10'"))
+        self.assertIn(">41.00 s</text>", svg)
+        self.assertIn(">42.00 s</text>", svg)
+
+    def test_render_chart_only_uses_previous_values_for_outliers(self) -> None:
+        rows = [
+            {
+                "commit_time": f"2026-03-{day:02d}T12:00:00Z",
+                "status": "ok",
+                "open_time_ms": str(value),
+            }
+            for day, value in [
+                (1, 200),
+                (2, 100),
+                (3, 100),
+                (4, 100),
+                (5, 100),
+            ]
+        ]
+        svg = generate_charts.render_chart(rows, "open_time_ms", "Open Time", Unit.MILLISECONDS)
+
+        self.assertEqual(1, svg.count("font-size='10'"))
+        self.assertIn(">100 ms</text>", svg)
+        self.assertNotIn(">200 ms</text>", svg)
+
 
 if __name__ == "__main__":
     unittest.main()
