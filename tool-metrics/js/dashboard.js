@@ -77,7 +77,7 @@ class ToolMetricsDashboard {
             this.applyFilters();
         } catch (error) {
             console.error("Failed to load metrics dashboard", error);
-            this.showError("Failed to load ../data/metrics.csv");
+            this.showError("Failed to load data/metrics.csv");
         }
     }
 
@@ -92,7 +92,7 @@ class ToolMetricsDashboard {
     }
 
     async loadRows() {
-        const response = await fetch("../data/metrics.csv");
+        const response = await fetch("data/metrics.csv");
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
