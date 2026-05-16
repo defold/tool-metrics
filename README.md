@@ -4,6 +4,10 @@ Nightly Defold editor benchmarks tracked by Defold commit metadata.
 
 Last updated: `2026-05-16T04:18:09Z`
 
+## Dashboard
+
+[Open the interactive dashboard](http://defold.com/tool-metrics).
+
 ## Run
 
 ```shell

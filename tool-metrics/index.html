@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defold Tool Metrics Dashboard</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <div>
+                <h1>Defold Tool Metrics</h1>
+                <p>Nightly editor benchmark history from Defold commit metadata.</p>
+            </div>
+            <div class="header-meta">
+                <span>Last sample</span>
+                <strong id="last-updated">Loading...</strong>
+            </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Latest sample summary">
+            <div class="summary-card">
+                <span>Latest Commit</span>
+                <strong id="summary-commit">-</strong>
+            </div>
+            <div class="summary-card">
+                <span>Release</span>
+                <strong id="summary-release">-</strong>
+            </div>
+            <div class="summary-card">
+                <span>Target</span>
+                <strong id="summary-target">-</strong>
+            </div>
+        </section>
+
+        <section class="controls" aria-label="Dashboard filters">
+            <div class="control-group">
+                <label for="sample-limit-filter">Samples</label>
+                <select id="sample-limit-filter">
+                    <option value="15" selected>Last 15</option>
+                    <option value="20">Last 20</option>
+                    <option value="50">Last 50</option>
+                    <option value="100">Last 100</option>
+                    <option value="">All</option>
+                </select>
+            </div>
+        </section>
+
+        <main>
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Install Size</h2>
+                        <p>Downloaded and unpacked editor size.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="install-size-chart"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Bob Build Time</h2>
+                        <p>Command-line build duration measured through bob.jar.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="bob-build-time-chart"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Open Time</h2>
+                        <p>Time from editor launch to project-open completion.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="open-time-chart"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Memory After Open</h2>
+                        <p>Editor memory after the benchmark project is open.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="memory-after-open-chart"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Build Time</h2>
+                        <p>Editor build command duration for the benchmark project.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="build-time-chart"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-header">
+                    <div>
+                        <h2>Memory Added By Build</h2>
+                        <p>Additional editor memory measured after the build step.</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div id="memory-added-by-build-chart"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <a href="https://github.com/defold/tool-metrics">GitHub repository</a>
+        </footer>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
