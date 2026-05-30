@@ -2,7 +2,7 @@
 
 Nightly Defold editor benchmarks tracked by Defold commit metadata.
 
-Last updated: `2026-05-29T04:35:25Z`
+Last updated: `2026-05-30T04:27:52Z`
 
 ## Dashboard
 
