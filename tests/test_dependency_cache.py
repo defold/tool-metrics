@@ -81,6 +81,27 @@ dependencies = https://example.com/a.zip, https://example.com/b.zip
         self.assertEqual(1, second.hit_count)
         self.assertEqual(["https://example.com/a.zip"], calls)
 
+    def test_metadata_records_original_and_local_dependency_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "dependency.zip"
+            result = dependency_cache.DependencyCacheResult(
+                ["https://example.com/a.zip"],
+                "deps-v1-test",
+                Path(tmp),
+                [dependency_cache.CachedDependency("https://example.com/a.zip", archive_path, "hit")],
+                1,
+                0,
+            )
+
+            metadata = result.metadata(
+                "http://127.0.0.1:1234",
+                ["http://127.0.0.1:1234/dependency.zip"],
+            )
+
+        self.assertEqual("http://127.0.0.1:1234", metadata["server_base_url"])
+        self.assertEqual("https://example.com/a.zip", metadata["dependencies"][0]["original_url"])
+        self.assertEqual("http://127.0.0.1:1234/dependency.zip", metadata["dependencies"][0]["local_url"])
+
     def test_local_server_serves_cached_archives_with_get_and_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp)
