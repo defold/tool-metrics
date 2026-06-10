@@ -15,6 +15,11 @@ import urllib.error
 import urllib.request
 import zipfile
 
+try:
+    from scripts import dependency_cache
+except ImportError:
+    import dependency_cache
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT = "defold/big-synthetic-project"
@@ -708,6 +713,7 @@ def main() -> int:
     parser.add_argument("--metadata-out", required=True)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--editor-sha")
+    parser.add_argument("--dependency-cache-dir")
     parser.add_argument("--open-timeout-seconds", type=int, default=OPEN_TIMEOUT_SECONDS)
     parser.add_argument("--build-timeout-seconds", type=int, default=BUILD_TIMEOUT_SECONDS)
     args = parser.parse_args()
@@ -715,6 +721,7 @@ def main() -> int:
     work_dir = Path(args.work_dir)
     artifacts_dir = Path(args.artifacts_dir)
     metadata_out = Path(args.metadata_out)
+    dependency_cache_dir = Path(args.dependency_cache_dir) if args.dependency_cache_dir else work_dir / "dependency-cache"
     logs_dir = artifacts_dir / "logs"
     work_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -740,6 +747,7 @@ def main() -> int:
     bob_build_result: dict[str, object] | None = None
     open_result: dict[str, object] | None = None
     build_result: dict[str, object] | None = None
+    dependency_server: dependency_cache.DependencyArchiveServer | None = None
     memory_after_open_bytes: int | None = None
     memory_after_build_bytes: int | None = None
     open_memory_source = "jcmd_gc.heap_info"
@@ -791,6 +799,30 @@ def main() -> int:
         log(f"downloaded project branch {project_branch} to {project_dir}")
         metadata["project_dir"] = str(project_dir.resolve())
         metadata["project_branch"] = project_branch
+
+        dependency_result = dependency_cache.prepare_dependency_cache(
+            project_dir / "game.project",
+            dependency_cache_dir,
+            download,
+        )
+        metadata["dependency_cache"] = dependency_result.metadata()
+        if dependency_result.dependencies:
+            dependency_server = dependency_cache.DependencyArchiveServer(dependency_result.cache_dir)
+            dependency_server.start()
+            local_dependency_urls = dependency_server.local_urls(dependency_result.archives)
+            dependency_cache.rewrite_game_project_dependencies(project_dir / "game.project", local_dependency_urls)
+            metadata["dependency_cache"] = dependency_result.metadata(
+                dependency_server.base_url,
+                local_dependency_urls,
+            )
+            log(
+                "prepared dependency cache "
+                f"{dependency_result.cache_key}: "
+                f"{dependency_result.hit_count} hits, "
+                f"{dependency_result.download_count} downloads"
+            )
+        else:
+            log("project has no dependency archives to cache")
 
         bob_project_dir = work_dir / "bob-project"
         if bob_project_dir.exists():
@@ -962,6 +994,8 @@ def main() -> int:
                     except ProcessLookupError:
                         pass
                     editor_process.wait(timeout=15)
+        if dependency_server is not None:
+            dependency_server.stop()
 
 
 if __name__ == "__main__":
