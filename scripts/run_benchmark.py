@@ -821,6 +821,16 @@ def main() -> int:
                 f"{dependency_result.hit_count} hits, "
                 f"{dependency_result.download_count} downloads"
             )
+            log(f"serving dependency archives from {dependency_result.cache_dir.resolve()}")
+            log(f"dependency archive local server: {dependency_server.base_url}")
+            for archive, local_url in zip(dependency_result.archives, local_dependency_urls):
+                log(
+                    "dependency source "
+                    f"{archive.status}: "
+                    f"{archive.original_url} -> {local_url} "
+                    f"({archive.archive_path.resolve()})"
+                )
+            log(f"patched game.project dependencies: {','.join(local_dependency_urls)}")
         else:
             log("project has no dependency archives to cache")
 
