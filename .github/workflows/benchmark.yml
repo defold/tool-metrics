@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,6 +39,20 @@ jobs:
 
       - name: Show runner details
         run: uname -a
+
+      - name: Compute dependency cache key
+        id: dependency-cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/dependency_cache.py key --project defold/big-synthetic-project
+
+      - name: Restore dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: work/dependency-cache
+          key: ${{ runner.os }}-${{ runner.arch }}-defold-deps-${{ steps.dependency-cache.outputs.key }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-defold-deps-
 
       - name: Run benchmark bootstrap
         env:
@@ -64,7 +78,7 @@ jobs:
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: benchmark-artifacts
           path: |
