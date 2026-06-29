@@ -82,3 +82,4 @@ a17be93c6c9ac834117c95e94d874f72574e8f88,2026-06-19T11:20:54Z,1.13.1-alpha,macos
 ecb8a0e9c108fc1d8ef93bf1624bf80285d01821,2026-06-24T14:17:38Z,1.13.1-alpha,macos-arm64,defold/big-synthetic-project,failed,editor exited before project opened (exit 127),316743903,,,,,,,
 5cb40959b213fe49036c207bf9c885d744411172,2026-06-25T12:29:58Z,1.13.1-alpha,macos-arm64,defold/big-synthetic-project,failed,editor exited before project opened (exit 127),316753050,,,,,,,
 88badcd04e1d98eb73446a0a36a343db6813bb22,2026-06-26T16:19:54Z,1.13.1-alpha,macos-arm64,defold/big-synthetic-project,failed,editor exited before project opened (exit 127),319123832,,,,,,,
+9472c60566d9c35e54b3b8a6a3315b532bedfb39,2026-06-28T12:02:42Z,1.13.1-alpha,macos-arm64,defold/big-synthetic-project,ok,,319159197,45453,76947,3157895168,133146,3934778368,776883200,
